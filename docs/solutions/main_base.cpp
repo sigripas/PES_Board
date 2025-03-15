@@ -8,6 +8,8 @@
 
 #include "Servo.h"
 
+#include "UltrasonicSensor.h"
+
 
 bool do_execute_main_task = false; // this variable will be toggled via the user button (blue button) and
                                    // decides whether to execute the main task or not
@@ -22,6 +24,17 @@ void toggle_do_execute_main_fcn(); // custom function which is getting executed 
 // main runs as an own thread
 int main()
 {
+    // ultra sonic sensor
+UltrasonicSensor us_sensor(PC_5);
+float us_distance_cm = 0.0f;
+    // set up states for state machine
+    enum RobotState {
+        INITIAL,
+        EXECUTION,
+        SLEEP,
+        EMERGENCY
+    } robot_state = RobotState::INITIAL;
+
     // attach button fall function address to user button object
     user_button.fall(&toggle_do_execute_main_fcn);
 
@@ -47,10 +60,30 @@ int main()
     Servo servo_D0(PB_D0);
     Servo servo_D1(PB_D1);
 
+    // minimal pulse width and maximal pulse width obtained from the servo calibration process
+    // futuba S3001
+    float servo_D0_ang_min = 0.0150f; // carefull, these values might differ from servo to servo
+    float servo_D0_ang_max = 0.1150f;
+    // reely S0090
+    float servo_D1_ang_min = 0.04f;
+    float servo_D1_ang_max = 0.115f;
+
+    // servo.setPulseWidth: before calibration (0,1) -> (min pwm, max pwm)
+    // servo.setPulseWidth: after calibration (0,1) -> (servo_D0_ang_min, servo_D0_ang_max)
+    servo_D0.calibratePulseMinMax(servo_D0_ang_min, servo_D0_ang_max);
+    servo_D1.calibratePulseMinMax(servo_D1_ang_min, servo_D1_ang_max);
+
+
     float servo_input = 0.0f;
     int servo_counter = 0; // define servo counter, this is an additional variable
                        // used to command the servo
     const int loops_per_seconds = static_cast<int>(ceilf(1.0f / (0.001f * static_cast<float>(main_task_period_ms))));
+
+    // mechanical button
+    DigitalIn mechanical_button(PC_5); // create DigitalIn object to evaluate mechanical button, you
+                                    // need to specify the mode for proper usage, see below
+    mechanical_button.mode(PullUp);    // sets pullup between pin and 3.3 V, so that there
+                                    // is a defined potential
 
     // this loop will run forever
     while (true) {
@@ -63,6 +96,11 @@ int main()
 
             // visual feedback that the main task is executed, setting this once would actually be enough
             led1 = 1;
+
+            // read us sensor distance, only valid measurements will update us_distance_cm
+            const float us_distance_cm_candidate = us_sensor.read();
+            if (us_distance_cm_candidate > 0.0f)
+                us_distance_cm = us_distance_cm_candidate;
 
             // enable the servos
             if (!servo_D0.isEnabled())
@@ -80,6 +118,48 @@ int main()
             (servo_counter != 0))                       // avoid servo_counter = 0
             servo_input += 0.005f;
             servo_counter++;
+
+// enable the servo and move it to the center
+if (!servo_D0.isEnabled()) {
+    servo_D0.enable(0.5f);
+}
+
+// enable the servo(REELY) and move it to zero
+if (!servo_D1.isEnabled()) {
+    servo_D1.enable();
+
+}
+        // default acceleration of the servo motion profile is 1.0e6f
+        servo_D0.setMaxAcceleration(0.3f);
+
+// state machine
+switch (robot_state) {
+    case RobotState::INITIAL: {
+        printf("INITIAL\n");
+
+        break;
+    }
+    case RobotState::EXECUTION: {
+        printf("EXECUTION\n");
+
+        break;
+    }
+    case RobotState::SLEEP: {
+        printf("SLEEP\n");
+
+        break;
+    }
+    case RobotState::EMERGENCY: {
+        printf("EMERGENCY\n");
+
+        break;
+    }
+    default: {
+
+        break; // do nothing
+    }
+}
+
 
         } else {
             // reset variables and objects
